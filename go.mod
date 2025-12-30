@@ -1,4 +1,4 @@
-module skool-loom-dl
+module skool-downloader
 
 go 1.24.2
 

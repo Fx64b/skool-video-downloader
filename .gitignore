@@ -34,3 +34,6 @@ skool-loom-dl
 # Test coverage files
 coverage.out
 coverage.html
+skool-downloader
+
+CLAUDE.md

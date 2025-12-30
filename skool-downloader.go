@@ -29,6 +29,27 @@ const (
 	skoolLoginURL    = "https://www.skool.com/login"
 )
 
+// ANSI color codes
+const (
+	colorReset   = "\033[0m"
+	colorRed     = "\033[31m"
+	colorGreen   = "\033[32m"
+	colorYellow  = "\033[33m"
+	colorBlue    = "\033[34m"
+	colorMagenta = "\033[35m"
+	colorCyan    = "\033[36m"
+)
+
+// Colored log prefixes
+const (
+	prefixInfo     = colorBlue + "[INFO]" + colorReset
+	prefixSuccess  = colorGreen + "[SUCCESS]" + colorReset
+	prefixError    = colorRed + "[ERROR]" + colorReset
+	prefixWarning  = colorYellow + "[WARNING]" + colorReset
+	prefixAuth     = colorMagenta + "[AUTH]" + colorReset
+	prefixDownload = colorCyan + "[DOWNLOAD]" + colorReset
+)
+
 // JSONCookie represents a cookie in the JSON format
 type JSONCookie struct {
 	Host       string `json:"host"`
@@ -62,7 +83,7 @@ func main() {
 		log.Fatalf("Error creating output directory: %v", err)
 	}
 
-	fmt.Println("🔍 Scraping Loom videos from:", config.SkoolURL)
+	fmt.Println(prefixInfo, "Scraping videos from:", config.SkoolURL)
 
 	// Scrape videos based on auth method
 	loomURLs, err := scrapeVideos(config)
@@ -71,32 +92,34 @@ func main() {
 	}
 
 	if len(loomURLs) == 0 {
-		fmt.Println("❌ No Loom videos found. Check authentication and URL.")
+		fmt.Println(prefixError, "No videos found. Check authentication and URL.")
 		return
 	}
 
-	fmt.Printf("✅ Found %d Loom videos\n", len(loomURLs))
+	fmt.Printf("%s Found %d video(s)\n", prefixSuccess, len(loomURLs))
 
 	// Download each video
 	for i, url := range loomURLs {
-		fmt.Printf("\n[%d/%d] 📥 Downloading: %s\n", i+1, len(loomURLs), url)
+		fmt.Printf("\n[%d/%d] %s %s\n", i+1, len(loomURLs), prefixDownload, url)
 		if err := downloadWithYtDlp(url, config.CookiesFile, config.OutputDir); err != nil {
-			fmt.Printf("❌ Error: %v\n", err)
+			fmt.Printf("%s %v\n", prefixError, err)
 		}
 	}
 
-	fmt.Println("\n✅ Download process completed!")
+	fmt.Println("\n" + prefixSuccess + " Download process completed!")
 }
 
 func printBanner() {
 	fmt.Println(`
-    ╔═══╗╔╗   ╔═══╗
-    ║╔═╗║║║   ║╔═╗║
-    ║╚══╗║║   ║║ ║║
-    ╚══╗║║║   ║║ ║║
-    ║╚═╝║║╚═╗ ║╚═╝║
-    ╚═══╝╚══╝ ╚═══╝
-    Skool Loom Downloader
+ ______     __  __     ______     ______     __            _____     __       
+/\  ___\   /\ \/ /    /\  __ \   /\  __ \   /\ \          /\  __-.  /\ \      
+\ \___  \  \ \  _"-.  \ \ \/\ \  \ \ \/\ \  \ \ \____     \ \ \/\ \ \ \ \____ 
+ \/\_____\  \ \_\ \_\  \ \_____\  \ \_____\  \ \_____\     \ \____-  \ \_____\
+  \/_____/   \/_/\/_/   \/_____/   \/_____/   \/_____/      \/____/   \/_____/
+  		
+  			Skool.com Video Downloader
+		
+			by Fx64b - github.com/fx64b
     `)
 }
 
@@ -117,7 +140,7 @@ func parseFlags() Config {
 
 func validateConfig(config Config) {
 	if config.SkoolURL == "" {
-		fmt.Println("Usage: skool-loom-dl -url=https://skool.com/yourschool/classroom/path [-cookies=cookies.json | -email=user@example.com -password=pass]")
+		fmt.Println("Usage: skool-downloader -url=https://skool.com/yourschool/classroom/path [-cookies=cookies.json | -email=user@example.com -password=pass]")
 		os.Exit(1)
 	}
 
@@ -158,18 +181,162 @@ func setupBrowser(headless bool) (context.Context, context.CancelFunc) {
 	}
 }
 
+// extractNextDataJSON extracts the __NEXT_DATA__ JSON object from Skool's HTML
+// This contains the complete course structure with all video URLs
+func extractNextDataJSON(html string) (map[string]interface{}, error) {
+	// Find the __NEXT_DATA__ script tag
+	re := regexp.MustCompile(`<script id="__NEXT_DATA__" type="application/json">([\s\S]*?)</script>`)
+	matches := re.FindStringSubmatch(html)
+
+	if len(matches) < 2 {
+		return nil, fmt.Errorf("__NEXT_DATA__ script tag not found in HTML")
+	}
+
+	// Parse JSON
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(matches[1]), &data); err != nil {
+		return nil, fmt.Errorf("failed to parse __NEXT_DATA__ JSON: %w", err)
+	}
+
+	return data, nil
+}
+
+// extractLoomURLsFromNextData recursively walks the course structure in __NEXT_DATA__
+// and extracts all video URLs (Loom and YouTube)
+func extractLoomURLsFromNextData(data map[string]interface{}) []string {
+	uniqueURLs := make(map[string]bool)
+	var result []string
+
+	// Navigate to course structure: data.props.pageProps.course
+	props, ok := data["props"].(map[string]interface{})
+	if !ok {
+		return result
+	}
+
+	pageProps, ok := props["pageProps"].(map[string]interface{})
+	if !ok {
+		return result
+	}
+
+	course, ok := pageProps["course"].(map[string]interface{})
+	if !ok {
+		return result
+	}
+
+	// Recursive function to walk the course tree
+	var walkCourseTree func(node map[string]interface{})
+	walkCourseTree = func(node map[string]interface{}) {
+		if node == nil {
+			return
+		}
+
+		// Check if this node has course metadata with a videoLink
+		if courseObj, ok := node["course"].(map[string]interface{}); ok {
+			if metadata, ok := courseObj["metadata"].(map[string]interface{}); ok {
+				if videoLink, ok := metadata["videoLink"].(string); ok {
+					// Check if it's a Loom URL
+					if strings.Contains(videoLink, "loom.com") {
+						// Extract video ID from URL
+						loomIDRegex := regexp.MustCompile(`loom\.com/(share|embed)/([a-zA-Z0-9_-]+)`)
+						if matches := loomIDRegex.FindStringSubmatch(videoLink); len(matches) >= 3 {
+							videoID := matches[2]
+							// Normalize to share URL format
+							shareURL := fmt.Sprintf("https://www.loom.com/share/%s", videoID)
+							if !uniqueURLs[shareURL] {
+								uniqueURLs[shareURL] = true
+								result = append(result, shareURL)
+							}
+						}
+					} else if strings.Contains(videoLink, "youtube.com") || strings.Contains(videoLink, "youtu.be") {
+						// Extract and normalize YouTube URL
+						normalizedURL := normalizeYouTubeURL(videoLink)
+						if normalizedURL != "" && !uniqueURLs[normalizedURL] {
+							uniqueURLs[normalizedURL] = true
+							result = append(result, normalizedURL)
+						}
+					}
+				}
+			}
+		}
+
+		// Recursively process children (sets and modules)
+		if children, ok := node["children"].([]interface{}); ok {
+			for _, child := range children {
+				if childMap, ok := child.(map[string]interface{}); ok {
+					walkCourseTree(childMap)
+				}
+			}
+		}
+	}
+
+	// Start walking from the course root
+	walkCourseTree(course)
+
+	return result
+}
+
+// normalizeYouTubeURL extracts video ID and normalizes YouTube URL to standard watch format
+func normalizeYouTubeURL(videoLink string) string {
+	// Regex patterns for different YouTube URL formats
+	patterns := []string{
+		`(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/|youtube\.com/v/)([a-zA-Z0-9_-]{11})`,
+	}
+
+	for _, pattern := range patterns {
+		re := regexp.MustCompile(pattern)
+		if matches := re.FindStringSubmatch(videoLink); len(matches) >= 2 {
+			videoID := matches[1]
+			return fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoID)
+		}
+	}
+
+	return ""
+}
+
+// extractLoomURLs extracts video URLs (Loom and YouTube) from HTML
+// NEW APPROACH: Try __NEXT_DATA__ JSON first (fast, accurate), fallback to regex (old method)
 func extractLoomURLs(html string) []string {
-	shareRegex := regexp.MustCompile(`https?://(?:www\.)?loom\.com/share/[a-zA-Z0-9]+`)
-	embedRegex := regexp.MustCompile(`https?://(?:www\.)?loom\.com/embed/([a-zA-Z0-9]+)`)
+	// Try extracting from __NEXT_DATA__ JSON first
+	if nextData, err := extractNextDataJSON(html); err == nil {
+		urls := extractLoomURLsFromNextData(nextData)
+		if len(urls) > 0 {
+			fmt.Printf("%s Extracted %d video(s) from __NEXT_DATA__ JSON\n", prefixInfo, len(urls))
+			return urls
+		}
+		fmt.Println(prefixWarning, "No videos found in __NEXT_DATA__, falling back to regex extraction")
+	} else {
+		fmt.Printf("%s __NEXT_DATA__ extraction failed (%v), falling back to regex extraction\n", prefixWarning, err)
+	}
 
-	matches := shareRegex.FindAllString(html, -1)
+	// Fallback to old regex-based extraction
+	// Loom patterns
+	loomShareRegex := regexp.MustCompile(`https?://(?:www\.)?loom\.com/share/[a-zA-Z0-9]+`)
+	loomEmbedRegex := regexp.MustCompile(`https?://(?:www\.)?loom\.com/embed/([a-zA-Z0-9]+)`)
 
-	// Convert embed URLs to share URLs
-	embedMatches := embedRegex.FindAllStringSubmatch(html, -1)
-	for _, match := range embedMatches {
+	// YouTube patterns
+	youtubeRegex := regexp.MustCompile(`https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/|youtube\.com/v/)([a-zA-Z0-9_-]{11})`)
+
+	var matches []string
+
+	// Extract Loom share URLs
+	matches = append(matches, loomShareRegex.FindAllString(html, -1)...)
+
+	// Convert Loom embed URLs to share URLs
+	loomEmbedMatches := loomEmbedRegex.FindAllStringSubmatch(html, -1)
+	for _, match := range loomEmbedMatches {
 		if len(match) >= 2 {
 			shareURL := fmt.Sprintf("https://www.loom.com/share/%s", match[1])
 			matches = append(matches, shareURL)
+		}
+	}
+
+	// Extract and normalize YouTube URLs
+	youtubeMatches := youtubeRegex.FindAllStringSubmatch(html, -1)
+	for _, match := range youtubeMatches {
+		if len(match) >= 2 {
+			videoID := match[1]
+			watchURL := fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoID)
+			matches = append(matches, watchURL)
 		}
 	}
 
@@ -183,6 +350,10 @@ func extractLoomURLs(html string) []string {
 		}
 	}
 
+	if len(result) > 0 {
+		fmt.Printf("%s Extracted %d video(s) from regex patterns\n", prefixInfo, len(result))
+	}
+
 	return result
 }
 
@@ -193,7 +364,7 @@ func scrapeWithLogin(config Config) ([]string, error) {
 	var currentURL string
 	var loginSuccess bool
 
-	fmt.Println("🔑 Attempting login with email and password...")
+	fmt.Println(prefixAuth, "Attempting login with email and password...")
 
 	// Navigate to the main Skool site
 	if err := chromedp.Run(ctx, chromedp.Tasks{
@@ -204,7 +375,7 @@ func scrapeWithLogin(config Config) ([]string, error) {
 		return nil, fmt.Errorf("failed to navigate to Skool: %v", err)
 	}
 
-	fmt.Println("📍 Landed on:", currentURL)
+	fmt.Println(prefixInfo, "Landed on:", currentURL)
 
 	// Try to find and click the login button
 	err := chromedp.Run(ctx, chromedp.Tasks{
@@ -216,7 +387,7 @@ func scrapeWithLogin(config Config) ([]string, error) {
 
 	// If login button not found, navigate directly to login page
 	if err != nil {
-		fmt.Println("⚠️ Couldn't find login button, trying direct navigation to login page...")
+		fmt.Println(prefixWarning, "Couldn't find login button, trying direct navigation to login page...")
 		if err := chromedp.Run(ctx, chromedp.Tasks{
 			chromedp.Navigate(skoolLoginURL),
 			chromedp.Sleep(initialWaitTime),
@@ -226,7 +397,7 @@ func scrapeWithLogin(config Config) ([]string, error) {
 		}
 	}
 
-	fmt.Println("📍 Login page:", currentURL)
+	fmt.Println(prefixInfo, "Login page:", currentURL)
 
 	// Complete the login form
 	if err := chromedp.Run(ctx, chromedp.Tasks{
@@ -249,7 +420,7 @@ func scrapeWithLogin(config Config) ([]string, error) {
 		return nil, fmt.Errorf("login failed: invalid credentials or captcha required")
 	}
 
-	fmt.Println("✅ Login successful! Redirected to:", currentURL)
+	fmt.Println(prefixSuccess, "Login successful! Redirected to:", currentURL)
 	return navigateAndScrape(ctx, config.SkoolURL, config.WaitTime)
 }
 
@@ -264,14 +435,14 @@ func scrapeWithCookies(config Config) ([]string, error) {
 	}
 
 	// Log cookie info
-	fmt.Println("🍪 Setting cookies...")
+	fmt.Println(prefixAuth, "Setting cookies...")
 	for _, c := range cookies {
 		if c.Name == "auth_token" && strings.Contains(c.Domain, "skool") {
 			truncatedValue := c.Value
 			if len(truncatedValue) > 20 {
 				truncatedValue = truncatedValue[:20] + "..."
 			}
-			fmt.Printf("  🔑 Auth token found: %s\n", truncatedValue)
+			fmt.Printf("%s Auth token found: %s\n", prefixAuth, truncatedValue)
 		}
 	}
 
@@ -302,14 +473,14 @@ func scrapeWithCookies(config Config) ([]string, error) {
 		return nil, fmt.Errorf("failed to navigate to main site: %v", err)
 	}
 
-	fmt.Printf("🌐 Initial navigation landed on: %s\n", currentURL)
+	fmt.Printf("%s Initial navigation landed on: %s\n", prefixInfo, currentURL)
 	return navigateAndScrape(ctx, config.SkoolURL, config.WaitTime)
 }
 
 func navigateAndScrape(ctx context.Context, targetURL string, waitTime int) ([]string, error) {
 	var currentURL, html string
 
-	fmt.Println("🏫 Navigating to classroom:", targetURL)
+	fmt.Println(prefixInfo, "Navigating to classroom:", targetURL)
 	if err := chromedp.Run(ctx, chromedp.Tasks{
 		chromedp.Navigate(targetURL),
 		chromedp.Sleep(time.Duration(waitTime) * time.Second),
@@ -318,7 +489,7 @@ func navigateAndScrape(ctx context.Context, targetURL string, waitTime int) ([]s
 		return nil, fmt.Errorf("failed to navigate to classroom: %v", err)
 	}
 
-	fmt.Println("📍 Landed on:", currentURL)
+	fmt.Println(prefixInfo, "Landed on:", currentURL)
 
 	// Check if we're on the right page
 	if strings.Contains(currentURL, "/about") {
@@ -335,7 +506,7 @@ func navigateAndScrape(ctx context.Context, targetURL string, waitTime int) ([]s
 	// Extract and return video URLs
 	urls := extractLoomURLs(html)
 	if len(urls) == 0 {
-		fmt.Println("⚠️ No videos found on the page.")
+		fmt.Println(prefixWarning, "No videos found on the page.")
 	}
 
 	return urls, nil
@@ -508,12 +679,8 @@ func convertJSONToNetscapeCookies(jsonFile string) (string, error) {
 	}()
 
 	// Write header
-	if _, err := fmt.Fprintln(tmpFile, "# Netscape HTTP Cookie File"); err != nil {
-		return "", err
-	}
-	if _, err := fmt.Fprintln(tmpFile, "# This file was generated by skool-loom-dl"); err != nil {
-		return "", err
-	}
+	fmt.Fprintln(tmpFile, "# Netscape HTTP Cookie File")
+	fmt.Fprintln(tmpFile, "# This file was generated by skool-downloader")
 
 	// Write cookies
 	for _, c := range jsonCookies {

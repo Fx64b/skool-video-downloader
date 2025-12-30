@@ -6,7 +6,7 @@ RUN apk add --no-cache gcc musl-dev
 WORKDIR /build
 COPY . .
 RUN go mod download
-RUN go build -o skool-loom-dl .
+RUN go build -o skool-downloader .
 
 FROM alpine:latest
 
@@ -21,9 +21,9 @@ WORKDIR /data
 RUN chown -R appuser:appgroup /data
 
 # Copy executable from builder
-COPY --from=builder /build/skool-loom-dl /usr/local/bin/
+COPY --from=builder /build/skool-downloader /usr/local/bin/
 
 # Switch to non-root user
 USER appuser
 
-ENTRYPOINT ["skool-loom-dl"]
+ENTRYPOINT ["skool-downloader"]

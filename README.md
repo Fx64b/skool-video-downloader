@@ -1,6 +1,6 @@
-# Skool-Loom-Downloader
+# Skool Downloader
 
-A Go utility to automatically scrape and download Loom videos from Skool.com classrooms.
+A Go utility to automatically scrape and download Loom and YouTube videos from Skool.com classrooms.
 
 ## Disclaimer
 
@@ -15,10 +15,11 @@ Use this tool only to download content you have the right to access. Please resp
 
 ## Features
 
-- Scrapes Loom video links from Skool.com classroom pages
+- Scrapes Loom and YouTube video links from Skool.com classroom pages
 - Authentication via email/password or cookies
 - Supports JSON and Netscape cookies.txt formats
 - Downloads videos using yt-dlp with proper authentication
+- Automatically detects and normalizes video URLs
 - Configurable page loading wait time
 - Toggleable headless mode for debugging
 
@@ -48,8 +49,8 @@ Use this tool only to download content you have the right to access. Please resp
 
 ```bash
 # Clone the repository
-git clone https://github.com/fx64b/skool-loom-dl
-cd skool-loom-dl
+git clone https://github.com/fx64b/skool-downloader
+cd skool-downloader
 
 # Build the executable
 go build
@@ -61,10 +62,10 @@ go build
 
 ```bash
 # Recommended: Using email/password for authentication
-./skool-loom-dl -url="https://skool.com/yourschool/classroom/your-classroom" -email="your@email.com" -password="yourpassword"
+./skool-downloader -url="https://skool.com/yourschool/classroom/your-classroom" -email="your@email.com" -password="yourpassword"
 
 # Alternative: Using cookies for authentication
-./skool-loom-dl -url="https://skool.com/yourschool/classroom/your-classroom" -cookies="cookies.json"
+./skool-downloader -url="https://skool.com/yourschool/classroom/your-classroom" -cookies="cookies.json"
 ```
 
 ### Important Options
@@ -83,12 +84,12 @@ go build
 
 **Email/Password (Recommended)**
 ```bash
-./skool-loom-dl -url="https://skool.com/yourschool/classroom/path" -email="your@email.com" -password="yourpassword"
+./skool-downloader -url="https://skool.com/yourschool/classroom/path" -email="your@email.com" -password="yourpassword"
 ```
 
 **Cookies (Alternative)**
 ```bash
-./skool-loom-dl -url="https://skool.com/yourschool/classroom/path" -cookies="cookies.json"
+./skool-downloader -url="https://skool.com/yourschool/classroom/path" -cookies="cookies.json"
 ```
 
 > **Note:** Email/password authentication is more reliable as it handles session management automatically. Cookie-based authentication may fail if cookies expire or are invalid.
