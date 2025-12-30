@@ -41,6 +41,9 @@ Use this tool only to download content you have the right to access. Please resp
    - **macOS (Apple Silicon)**: `skool-downloader-darwin-arm64`
 4. Make it executable (Linux/macOS): `chmod +x skool-downloader-*`
 
+> [!NOTE]
+> Older versions were called `skool-loom-dl` bfore release v2.0.0
+
 ### Option 2: Build from Source
 
 #### Prerequisites
