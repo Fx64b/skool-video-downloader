@@ -13,6 +13,9 @@ Use this tool only to download content you have the right to access. Please resp
 - Respect the terms of service of both Skool.com and Loom.com
 - The developers accept no liability for misuse
 
+
+![CLI Screenshot](docs/cli.png)
+
 ## Features
 
 - Scrapes Loom and YouTube video links from Skool.com classroom pages
