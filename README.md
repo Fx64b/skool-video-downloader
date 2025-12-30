@@ -28,15 +28,15 @@ Use this tool only to download content you have the right to access. Please resp
 ### Option 1: Download Pre-built Binaries (Recommended)
 
 1. Install [yt-dlp](https://github.com/yt-dlp/yt-dlp#installation)
-2. Download the latest release from the [Releases page](https://github.com/fx64b/skool-loom-dl/releases)
+2. Download the latest release from the [Releases page](https://github.com/fx64b/skool-downloader/releases)
 3. Choose the appropriate binary for your platform:
-   - **Linux (x64)**: `skool-loom-dl-linux-amd64`
-   - **Linux (ARM64)**: `skool-loom-dl-linux-arm64`
-   - **Windows (x64)**: `skool-loom-dl-windows-amd64.exe`
-   - **Windows (ARM64)**: `skool-loom-dl-windows-arm64.exe`
-   - **macOS (Intel)**: `skool-loom-dl-darwin-amd64`
-   - **macOS (Apple Silicon)**: `skool-loom-dl-darwin-arm64`
-4. Make it executable (Linux/macOS): `chmod +x skool-loom-dl-*`
+   - **Linux (x64)**: `skool-downloader-linux-amd64`
+   - **Linux (ARM64)**: `skool-downloader-linux-arm64`
+   - **Windows (x64)**: `skool-downloader-windows-amd64.exe`
+   - **Windows (ARM64)**: `skool-downloader-windows-arm64.exe`
+   - **macOS (Intel)**: `skool-downloader-darwin-amd64`
+   - **macOS (Apple Silicon)**: `skool-downloader-darwin-arm64`
+4. Make it executable (Linux/macOS): `chmod +x skool-downloader-*`
 
 ### Option 2: Build from Source
 
@@ -191,7 +191,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 To create a new release with cross-platform binaries:
 
-1. Go to the [Actions tab](https://github.com/fx64b/skool-loom-dl/actions)
+1. Go to the [Actions tab](https://github.com/fx64b/skool-downloader/actions)
 2. Select "Build and Release" workflow
 3. Click "Run workflow"
 4. Enter the desired version (e.g., `v1.0.0`)

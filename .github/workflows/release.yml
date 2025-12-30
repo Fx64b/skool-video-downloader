@@ -56,13 +56,13 @@ jobs:
           CGO_ENABLED: 0
         run: |
           mkdir -p dist
-          go build -ldflags="-s -w" -o dist/skool-loom-dl-${{ matrix.platform }}${{ matrix.extension }} .
+          go build -ldflags="-s -w" -o dist/skool-downloader-${{ matrix.platform }}${{ matrix.extension }} .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: skool-loom-dl-${{ matrix.platform }}
-          path: dist/skool-loom-dl-${{ matrix.platform }}${{ matrix.extension }}
+          name: skool-downloader-${{ matrix.platform }}
+          path: dist/skool-downloader-${{ matrix.platform }}${{ matrix.extension }}
 
   release:
     name: Create Release
@@ -86,12 +86,12 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir -p release
-          cp dist/skool-loom-dl-linux-amd64/skool-loom-dl-linux-amd64 release/
-          cp dist/skool-loom-dl-linux-arm64/skool-loom-dl-linux-arm64 release/
-          cp dist/skool-loom-dl-windows-amd64/skool-loom-dl-windows-amd64.exe release/
-          cp dist/skool-loom-dl-windows-arm64/skool-loom-dl-windows-arm64.exe release/
-          cp dist/skool-loom-dl-darwin-amd64/skool-loom-dl-darwin-amd64 release/
-          cp dist/skool-loom-dl-darwin-arm64/skool-loom-dl-darwin-arm64 release/
+          cp dist/skool-downloader-linux-amd64/skool-downloader-linux-amd64 release/
+          cp dist/skool-downloader-linux-arm64/skool-downloader-linux-arm64 release/
+          cp dist/skool-downloader-windows-amd64/skool-downloader-windows-amd64.exe release/
+          cp dist/skool-downloader-windows-arm64/skool-downloader-windows-arm64.exe release/
+          cp dist/skool-downloader-darwin-amd64/skool-downloader-darwin-amd64 release/
+          cp dist/skool-downloader-darwin-arm64/skool-downloader-darwin-arm64 release/
           ls -la release/
 
       - name: Create Release
@@ -102,29 +102,29 @@ jobs:
           body: |
             ## Release ${{ github.event.inputs.version }}
             
-            Cross-platform binaries for skool-loom-dl:
+            Cross-platform binaries for skool-downloader:
             
             ### Supported Platforms:
-            - **Linux (x64)**: `skool-loom-dl-linux-amd64`
-            - **Linux (ARM64)**: `skool-loom-dl-linux-arm64`
-            - **Windows (x64)**: `skool-loom-dl-windows-amd64.exe`
-            - **Windows (ARM64)**: `skool-loom-dl-windows-arm64.exe`
-            - **macOS (Intel)**: `skool-loom-dl-darwin-amd64`
-            - **macOS (Apple Silicon)**: `skool-loom-dl-darwin-arm64`
+            - **Linux (x64)**: `skool-downloader-linux-amd64`
+            - **Linux (ARM64)**: `skool-downloader-linux-arm64`
+            - **Windows (x64)**: `skool-downloader-windows-amd64.exe`
+            - **Windows (ARM64)**: `skool-downloader-windows-arm64.exe`
+            - **macOS (Intel)**: `skool-downloader-darwin-amd64`
+            - **macOS (Apple Silicon)**: `skool-downloader-darwin-arm64`
             
             ### Installation:
             1. Download the appropriate binary for your platform
-            2. Make it executable (Linux/macOS): `chmod +x skool-loom-dl-*`
-            3. Run with: `./skool-loom-dl-* -h` to see usage options
+            2. Make it executable (Linux/macOS): `chmod +x skool-downloader-*`
+            3. Run with: `./skool-downloader-* -h` to see usage options
             
             ### Prerequisites:
             - [yt-dlp](https://github.com/yt-dlp/yt-dlp#installation) must be installed and available in your PATH
           draft: false
           prerelease: false
           files: |
-            release/skool-loom-dl-linux-amd64
-            release/skool-loom-dl-linux-arm64
-            release/skool-loom-dl-windows-amd64.exe
-            release/skool-loom-dl-windows-arm64.exe
-            release/skool-loom-dl-darwin-amd64
-            release/skool-loom-dl-darwin-arm64
+            release/skool-downloader-linux-amd64
+            release/skool-downloader-linux-arm64
+            release/skool-downloader-windows-amd64.exe
+            release/skool-downloader-windows-arm64.exe
+            release/skool-downloader-darwin-amd64
+            release/skool-downloader-darwin-arm64
