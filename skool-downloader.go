@@ -143,7 +143,21 @@ func parseFlags() Config {
 
 func validateConfig(config Config) {
 	if config.SkoolURL == "" {
-		fmt.Println("Usage: skool-downloader -url=https://skool.com/yourschool/classroom/path [-cookies=cookies.json | -email=user@example.com -password=pass]")
+		fmt.Println("Usage: skool-downloader -url=https://skool.com/yourschool/classroom/path [-cookies=cookies.json | -email=user@example.com -password=pass] [-browser=/path/to/browser]")
+		fmt.Println()
+		fmt.Println("Flags:")
+		fmt.Println("  -url        Skool classroom URL to scrape (required)")
+		fmt.Println("  -email      Email address for Skool login")
+		fmt.Println("  -password   Password for Skool login (required with -email)")
+		fmt.Println("  -cookies    Path to cookies file (JSON or Netscape .txt)")
+		fmt.Println("  -output     Directory to save downloaded videos (default: \"downloads\")")
+		fmt.Println("  -wait       Seconds to wait for page load (default: 2)")
+		fmt.Println("  -headless   Run browser in headless mode (default: true)")
+		fmt.Println("  -browser    Path or command of Chromium-based browser to use")
+		fmt.Println("              Auto-detected in this order:")
+		fmt.Println("                Windows : Edge > Chrome > Chromium > Brave")
+		fmt.Println("                macOS   : Chrome > Chromium > Edge > Brave > Arc")
+		fmt.Println("                Linux   : chromium-browser, chromium, google-chrome, ...")
 		os.Exit(1)
 	}
 

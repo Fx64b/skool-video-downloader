@@ -25,6 +25,7 @@ Use this tool only to download content you have the right to access. Please resp
 - Automatically detects and normalizes video URLs
 - Configurable page loading wait time
 - Toggleable headless mode for debugging
+- Auto-detects any installed Chromium-based browser — no Google Chrome required
 
 ## Installation
 
@@ -84,7 +85,34 @@ go build
 -output     Directory to save videos (default: "downloads")
 -wait       Page load wait time in seconds (default: 2)
 -headless   Run browser headless (default: true, set false for debugging)
+-browser    Path or command of the browser to use (auto-detected if not set)
 ```
+
+### Browser Support
+
+The tool works with any installed Chromium-based browser and does **not** require Google Chrome. On startup it searches for a supported browser automatically, in this order:
+
+| Platform | Detection order |
+|----------|----------------|
+| **Windows** | Microsoft Edge (built-in on Win 10/11) → Chrome → Chromium → Brave |
+| **macOS** | Chrome → Chromium → Edge → Brave → Arc |
+| **Linux** | `chromium-browser` → `chromium` → `google-chrome` → `microsoft-edge` → `brave-browser` |
+
+The first browser found is used. If you want to use a specific browser, or if auto-detection fails, pass its path explicitly with `-browser`:
+
+```bash
+# Use a specific browser by absolute path
+./skool-downloader -url="..." -email="..." -password="..." -browser="/usr/bin/chromium"
+
+# Use a browser command available in PATH (Linux/macOS)
+./skool-downloader -url="..." -email="..." -password="..." -browser="brave-browser"
+
+# Windows example
+skool-downloader.exe -url="..." -email="..." -password="..." -browser="C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe"
+```
+
+> [!NOTE]
+> Only Chromium-based browsers are supported (Chrome, Edge, Chromium, Brave, Arc, Opera, …). Firefox and Safari cannot be used because they do not implement the Chrome DevTools Protocol that the tool relies on.
 
 ### Authentication Methods
 
@@ -117,6 +145,8 @@ If you choose to use cookies instead of email/password:
 - **Download errors**: Update yt-dlp (`pip install -U yt-dlp`)
 - **Login issues**: Try `-headless=false` to see the browser and debug
 - **Specific video errors**: Check if the video is still available on Loom
+- **No browser found**: Install Microsoft Edge, Chrome, Chromium, or Brave — or point to an existing one with `-browser=/path/to/browser`
+- **Wrong browser launched**: Override auto-detection with `-browser=` to pick the exact executable you want
 
 ## Development and Testing
 
