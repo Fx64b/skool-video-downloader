@@ -90,7 +90,7 @@ go build
 
 ### Browser Support
 
-The tool does **not** require Google Chrome. On startup it searches for a supported Chromium-based browser automatically:
+The tool requires a Chromium-based browser. On startup it searches for a supported Chromium-based browser automatically: Unfortunatelly Safari and Firefox cannot be supported as of now.
 
 | Platform | Detection order |
 |----------|----------------|
