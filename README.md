@@ -112,7 +112,7 @@ skool-downloader.exe -url="..." -email="..." -password="..." -browser="C:\Progra
 ```
 
 > [!NOTE]
-> Safari is not supported. Firefox support relies on its experimental CDP implementation (available since Firefox 86) and works best with email/password login; cookie-based auth may have limited compatibility.
+> Safari is not supported. Firefox support requires Firefox **86–129**; Firefox 130+ switched to WebDriver BiDi which is not compatible with this tool. Cookie-based auth with Firefox may have limited compatibility.
 
 ### Authentication Methods
 

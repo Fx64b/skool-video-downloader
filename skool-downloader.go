@@ -157,7 +157,8 @@ func validateConfig(config Config) {
 		fmt.Println("  -wait       Seconds to wait for page load (default: 2)")
 		fmt.Println("  -headless   Run browser in headless mode (default: true)")
 		fmt.Println("  -browser    Path or command of browser to use (auto-detected if not set)")
-		fmt.Println("              Supported: Edge, Chrome, Chromium, Brave, Arc, Firefox")
+		fmt.Println("              Supported: Edge, Chrome, Chromium, Brave, Arc, Firefox 86-129")
+		fmt.Println("              Note: Firefox 130+ uses WebDriver BiDi and is NOT supported")
 		fmt.Println("              Auto-detected in this order:")
 		fmt.Println("                Windows : Edge > Chrome > Chromium > Brave > Firefox")
 		fmt.Println("                macOS   : Chrome > Chromium > Edge > Brave > Arc > Firefox")
@@ -285,19 +286,22 @@ func findFreePort() (int, error) {
 	return l.Addr().(*net.TCPAddr).Port, nil
 }
 
-func waitForFirefoxCDP(port int, wsFromStderr <-chan string, timeout time.Duration) (string, error) {
+func waitForFirefoxCDP(port int, wsFromStderr <-chan string, biDiDetected <-chan struct{}, timeout time.Duration) (string, error) {
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{Timeout: 2 * time.Second}
 	// Cover IPv4, IPv6, and any OS-specific localhost resolution difference.
 	hosts := []string{"127.0.0.1", "localhost", "[::1]"}
 
 	for time.Now().Before(deadline) {
-		// Prefer a URL that Firefox printed to stderr directly.
 		select {
 		case wsURL, ok := <-wsFromStderr:
 			if ok && wsURL != "" {
 				return wsURL, nil
 			}
+		case <-biDiDetected:
+			// Firefox 130+ replaced CDP with WebDriver BiDi, which chromedp cannot speak.
+			return "", fmt.Errorf("Firefox 130+ uses WebDriver BiDi which is not compatible with this tool.\n" +
+				"Please use Firefox 86–129, or a Chromium-based browser (Chrome, Chromium, Edge, Brave)")
 		default:
 		}
 
@@ -377,6 +381,7 @@ func setupFirefoxBrowser(headless bool, firefoxPath string) (context.Context, co
 
 	// Scan stderr: print each line for visibility and detect any ws:// URL Firefox may emit.
 	wsFromStderr := make(chan string, 1)
+	biDiDetected := make(chan struct{}, 1)
 	go func() {
 		defer close(wsFromStderr)
 		scanner := bufio.NewScanner(stderrPipe)
@@ -385,15 +390,22 @@ func setupFirefoxBrowser(headless bool, firefoxPath string) (context.Context, co
 			fmt.Fprintln(os.Stderr, "[firefox]", line)
 			if i := strings.Index(line, "ws://"); i >= 0 {
 				url := strings.Fields(line[i:])[0]
-				select {
-				case wsFromStderr <- url:
-				default:
+				if strings.Contains(line, "BiDi") {
+					select {
+					case biDiDetected <- struct{}{}:
+					default:
+					}
+				} else {
+					select {
+					case wsFromStderr <- url:
+					default:
+					}
 				}
 			}
 		}
 	}()
 
-	wsURL, err := waitForFirefoxCDP(port, wsFromStderr, 30*time.Second)
+	wsURL, err := waitForFirefoxCDP(port, wsFromStderr, biDiDetected, 30*time.Second)
 	if err != nil {
 		cmd.Process.Kill()
 		os.RemoveAll(profileDir)
