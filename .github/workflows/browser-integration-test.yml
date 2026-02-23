@@ -1,0 +1,82 @@
+name: Browser Integration Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  browser-test:
+    name: Browser Launch Test (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.2'
+          cache: true
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Setup Chrome
+        uses: browser-actions/setup-chrome@v1
+        id: setup-chrome
+
+      - name: Build (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: go build -v -o skool-downloader .
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: go build -v -o skool-downloader.exe .
+
+      # Run with fake credentials against the real skool.com URL.
+      # The program opens the browser, navigates to skool.com, and prints
+      # "Attempting login" before filling the form. Seeing that line proves
+      # the browser launched and reached the site. The process will exit
+      # non-zero (invalid credentials) — that is expected and allowed.
+      - name: Test browser launch and login attempt (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          output=$(./skool-downloader \
+            -url="https://www.skool.com/test/classroom/abc" \
+            -email="test@example.com" \
+            -password="testpassword123" \
+            -browser="${{ steps.setup-chrome.outputs.chrome-path }}" \
+            -wait=1 \
+            2>&1) || true
+          echo "$output"
+          if echo "$output" | grep -q "Attempting login"; then
+            echo "SUCCESS: Browser opened and reached skool.com"
+          else
+            echo "FAIL: Did not reach login attempt — browser may not have opened"
+            exit 1
+          fi
+
+      - name: Test browser launch and login attempt (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $output = & .\skool-downloader.exe `
+            "-url=https://www.skool.com/test/classroom/abc" `
+            "-email=test@example.com" `
+            "-password=testpassword123" `
+            "-browser=${{ steps.setup-chrome.outputs.chrome-path }}" `
+            "-wait=1" 2>&1 | Out-String
+          Write-Output $output
+          if ($output -match "Attempting login") {
+            Write-Output "SUCCESS: Browser opened and reached skool.com"
+          } else {
+            Write-Error "FAIL: Did not reach login attempt — browser may not have opened"
+            exit 1
+          }

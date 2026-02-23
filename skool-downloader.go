@@ -254,6 +254,10 @@ func setupBrowser(headless bool, browserPath string) (context.Context, context.C
 		return nil, nil, err
 	}
 
+	if strings.Contains(strings.ToLower(filepath.Base(resolvedPath)), "firefox") {
+		return nil, nil, fmt.Errorf("Firefox is not supported. Please use a Chromium-based browser (Chrome, Chromium, Edge, Brave)")
+	}
+
 	fmt.Printf("%s Using browser: %s\n", prefixInfo, resolvedPath)
 
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
