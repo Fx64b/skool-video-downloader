@@ -6,6 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -135,7 +137,7 @@ func parseFlags() Config {
 	flag.StringVar(&config.OutputDir, "output", defaultOutputDir, "Directory to save downloaded videos")
 	flag.IntVar(&config.WaitTime, "wait", defaultWaitTime, "Time to wait for page to load in seconds")
 	flag.BoolVar(&config.Headless, "headless", defaultHeadless, "Run in headless mode (no browser UI)")
-	flag.StringVar(&config.BrowserPath, "browser", "", "Path to Chromium-based browser executable (auto-detected if not specified)")
+	flag.StringVar(&config.BrowserPath, "browser", "", "Path or command of browser to use (Chromium-based or Firefox, auto-detected if not specified)")
 
 	flag.Parse()
 	return config
@@ -153,11 +155,12 @@ func validateConfig(config Config) {
 		fmt.Println("  -output     Directory to save downloaded videos (default: \"downloads\")")
 		fmt.Println("  -wait       Seconds to wait for page load (default: 2)")
 		fmt.Println("  -headless   Run browser in headless mode (default: true)")
-		fmt.Println("  -browser    Path or command of Chromium-based browser to use")
+		fmt.Println("  -browser    Path or command of browser to use (auto-detected if not set)")
+		fmt.Println("              Supported: Edge, Chrome, Chromium, Brave, Arc, Firefox")
 		fmt.Println("              Auto-detected in this order:")
-		fmt.Println("                Windows : Edge > Chrome > Chromium > Brave")
-		fmt.Println("                macOS   : Chrome > Chromium > Edge > Brave > Arc")
-		fmt.Println("                Linux   : chromium-browser, chromium, google-chrome, ...")
+		fmt.Println("                Windows : Edge > Chrome > Chromium > Brave > Firefox")
+		fmt.Println("                macOS   : Chrome > Chromium > Edge > Brave > Arc > Firefox")
+		fmt.Println("                Linux   : chromium-browser, chromium, google-chrome, ..., firefox")
 		os.Exit(1)
 	}
 
@@ -177,9 +180,6 @@ func scrapeVideos(config Config) ([]string, error) {
 	return scrapeWithCookies(config)
 }
 
-// getBrowserCandidates returns an ordered list of Chromium-based browser paths/commands
-// to try for the current operating system. Absolute paths are checked for existence;
-// bare names are resolved via PATH lookup.
 func getBrowserCandidates() []string {
 	switch runtime.GOOS {
 	case "windows":
@@ -198,20 +198,18 @@ func getBrowserCandidates() []string {
 		}
 
 		return []string{
-			// Microsoft Edge — ships with Windows 10/11
 			filepath.Join(programFiles, "Microsoft", "Edge", "Application", "msedge.exe"),
 			filepath.Join(programFilesX86, "Microsoft", "Edge", "Application", "msedge.exe"),
-			// Google Chrome
 			filepath.Join(programFiles, "Google", "Chrome", "Application", "chrome.exe"),
 			filepath.Join(programFilesX86, "Google", "Chrome", "Application", "chrome.exe"),
 			filepath.Join(localAppData, "Google", "Chrome", "Application", "chrome.exe"),
-			// Chromium
 			filepath.Join(programFiles, "Chromium", "Application", "chrome.exe"),
 			filepath.Join(programFilesX86, "Chromium", "Application", "chrome.exe"),
-			// Brave Browser
 			filepath.Join(programFiles, "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
 			filepath.Join(programFilesX86, "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
 			filepath.Join(localAppData, "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+			filepath.Join(programFiles, "Mozilla Firefox", "firefox.exe"),
+			filepath.Join(programFilesX86, "Mozilla Firefox", "firefox.exe"),
 		}
 
 	case "darwin":
@@ -221,9 +219,10 @@ func getBrowserCandidates() []string {
 			"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
 			"/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
 			"/Applications/Arc.app/Contents/MacOS/Arc",
+			"/Applications/Firefox.app/Contents/MacOS/firefox",
 		}
 
-	default: // Linux and other Unix-like systems
+	default:
 		return []string{
 			"chromium-browser",
 			"chromium",
@@ -233,17 +232,14 @@ func getBrowserCandidates() []string {
 			"microsoft-edge",
 			"microsoft-edge-stable",
 			"brave-browser",
+			"firefox",
+			"firefox-esr",
 		}
 	}
 }
 
-// findBrowser locates an available Chromium-based browser executable.
-// If customPath is non-empty it is used directly (absolute path or PATH lookup).
-// Otherwise the function searches OS-specific default locations, preferring
-// the system default browser (e.g. Edge on Windows) before falling back to Chrome.
 func findBrowser(customPath string) (string, error) {
 	if customPath != "" {
-		// Accept both an absolute path and a bare command name.
 		if filepath.IsAbs(customPath) {
 			if _, err := os.Stat(customPath); err == nil {
 				return customPath, nil
@@ -269,20 +265,96 @@ func findBrowser(customPath string) (string, error) {
 	}
 
 	return "", fmt.Errorf(
-		"no supported Chromium-based browser found.\n" +
-			"Supported browsers: Microsoft Edge (built-in on Windows 10/11), Google Chrome, Chromium, Brave.\n" +
+		"no supported browser found.\n" +
+			"Supported browsers: Microsoft Edge (built-in on Windows 10/11), Google Chrome, Chromium, Brave, Firefox.\n" +
 			"Install one of the above, or specify an explicit path with: -browser=/path/to/browser",
 	)
 }
 
-func setupBrowser(headless bool, browserPath string) (context.Context, context.CancelFunc, error) {
-	resolvedPath, err := findBrowser(browserPath)
+func isFirefox(path string) bool {
+	return strings.Contains(strings.ToLower(filepath.Base(path)), "firefox")
+}
+
+func findFreePort() (int, error) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return nil, nil, err
+		return 0, err
+	}
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port, nil
+}
+
+func waitForFirefoxCDP(port int, timeout time.Duration) (string, error) {
+	url := fmt.Sprintf("http://127.0.0.1:%d/json/version", port)
+	deadline := time.Now().Add(timeout)
+	client := &http.Client{Timeout: 2 * time.Second}
+
+	for time.Now().Before(deadline) {
+		resp, err := client.Get(url)
+		if err == nil {
+			var info struct {
+				WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
+			}
+			if json.NewDecoder(resp.Body).Decode(&info) == nil && info.WebSocketDebuggerURL != "" {
+				resp.Body.Close()
+				return info.WebSocketDebuggerURL, nil
+			}
+			resp.Body.Close()
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return "", fmt.Errorf("timed out waiting for Firefox CDP on port %d", port)
+}
+
+// Firefox requires a different launch strategy: chromedp's ExecAllocator expects
+// Chrome's startup output, so Firefox is started manually and connected via RemoteAllocator.
+func setupFirefoxBrowser(headless bool, firefoxPath string) (context.Context, context.CancelFunc, error) {
+	port, err := findFreePort()
+	if err != nil {
+		return nil, nil, fmt.Errorf("could not find free port: %w", err)
 	}
 
-	fmt.Printf("%s Using browser: %s\n", prefixInfo, resolvedPath)
+	profileDir, err := os.MkdirTemp("", "skool-firefox-*")
+	if err != nil {
+		return nil, nil, fmt.Errorf("could not create temp profile: %w", err)
+	}
 
+	args := []string{
+		fmt.Sprintf("--remote-debugging-port=%d", port),
+		"--no-remote",
+		"--profile", profileDir,
+	}
+	if headless {
+		args = append(args, "--headless")
+	}
+
+	cmd := exec.Command(firefoxPath, args...)
+	if err := cmd.Start(); err != nil {
+		os.RemoveAll(profileDir)
+		return nil, nil, fmt.Errorf("could not start Firefox: %w", err)
+	}
+
+	wsURL, err := waitForFirefoxCDP(port, 30*time.Second)
+	if err != nil {
+		cmd.Process.Kill()
+		os.RemoveAll(profileDir)
+		return nil, nil, fmt.Errorf("Firefox CDP not ready: %w", err)
+	}
+
+	allocCtx, cancel := chromedp.NewRemoteAllocator(context.Background(), wsURL)
+	ctx, cancel2 := chromedp.NewContext(allocCtx, chromedp.WithLogf(log.Printf))
+	ctx, cancel3 := context.WithTimeout(ctx, browserTimeout)
+
+	return ctx, func() {
+		cancel3()
+		cancel2()
+		cancel()
+		cmd.Process.Kill()
+		os.RemoveAll(profileDir)
+	}, nil
+}
+
+func setupChromiumBrowser(headless bool, resolvedPath string) (context.Context, context.CancelFunc, error) {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", headless),
 		chromedp.Flag("disable-gpu", true),
@@ -296,12 +368,25 @@ func setupBrowser(headless bool, browserPath string) (context.Context, context.C
 	ctx, cancel2 := chromedp.NewContext(allocCtx, chromedp.WithLogf(log.Printf))
 	ctx, cancel3 := context.WithTimeout(ctx, browserTimeout)
 
-	// Return a cancel function that calls all three cancel functions
 	return ctx, func() {
 		cancel3()
 		cancel2()
 		cancel()
 	}, nil
+}
+
+func setupBrowser(headless bool, browserPath string) (context.Context, context.CancelFunc, error) {
+	resolvedPath, err := findBrowser(browserPath)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	fmt.Printf("%s Using browser: %s\n", prefixInfo, resolvedPath)
+
+	if isFirefox(resolvedPath) {
+		return setupFirefoxBrowser(headless, resolvedPath)
+	}
+	return setupChromiumBrowser(headless, resolvedPath)
 }
 
 // extractNextDataJSON extracts the __NEXT_DATA__ JSON object from Skool's HTML
