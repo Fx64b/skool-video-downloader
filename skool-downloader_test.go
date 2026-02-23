@@ -141,7 +141,6 @@ func TestParseInt64(t *testing.T) {
 }
 
 func TestConvertJSONToNetscapeCookies(t *testing.T) {
-	// Create a temporary JSON cookies file
 	tmpDir := t.TempDir()
 	jsonFile := filepath.Join(tmpDir, "cookies.json")
 
@@ -183,7 +182,6 @@ func TestConvertJSONToNetscapeCookies(t *testing.T) {
 		}
 	}()
 
-	// Read the converted file
 	content, err := os.ReadFile(netscapeFile)
 	if err != nil {
 		t.Fatalf("Failed to read converted file: %v", err)
@@ -191,12 +189,10 @@ func TestConvertJSONToNetscapeCookies(t *testing.T) {
 
 	contentStr := string(content)
 
-	// Check for header
 	if !contains(contentStr, "# Netscape HTTP Cookie File") {
 		t.Error("Missing Netscape header")
 	}
 
-	// Check for cookie data
 	if !contains(contentStr, "test_cookie") {
 		t.Error("Missing test_cookie in output")
 	}
@@ -268,7 +264,6 @@ func TestParseJSONCookies(t *testing.T) {
 		t.Errorf("Expected 2 cookies, got %d", len(cookies))
 	}
 
-	// Check first cookie
 	if cookies[0].Name != "cookie1" {
 		t.Errorf("Expected name 'cookie1', got '%s'", cookies[0].Name)
 	}
@@ -288,7 +283,6 @@ func TestParseJSONCookies(t *testing.T) {
 		t.Errorf("Expected SameSite Lax, got %v", cookies[0].SameSite)
 	}
 
-	// Check second cookie
 	if cookies[1].Name != "cookie2" {
 		t.Errorf("Expected name 'cookie2', got '%s'", cookies[1].Name)
 	}
@@ -328,7 +322,6 @@ www.example.com	TRUE	/test	FALSE	0	cookie2	value2
 		t.Errorf("Expected 3 cookies, got %d", len(cookies))
 	}
 
-	// Check first cookie
 	if cookies[0].Name != "cookie1" {
 		t.Errorf("Expected name 'cookie1', got '%s'", cookies[0].Name)
 	}
@@ -342,7 +335,6 @@ www.example.com	TRUE	/test	FALSE	0	cookie2	value2
 		t.Error("Expected Secure to be true")
 	}
 
-	// Check second cookie
 	if cookies[1].Name != "cookie2" {
 		t.Errorf("Expected name 'cookie2', got '%s'", cookies[1].Name)
 	}
@@ -353,7 +345,6 @@ www.example.com	TRUE	/test	FALSE	0	cookie2	value2
 		t.Error("Expected Secure to be false")
 	}
 
-	// Check third cookie
 	if cookies[2].Name != "cookie3" {
 		t.Errorf("Expected name 'cookie3', got '%s'", cookies[2].Name)
 	}
@@ -467,7 +458,43 @@ func TestValidateConfig_NoAuth(t *testing.T) {
 	t.Skip("Skipping test that calls os.Exit")
 }
 
-// Helper function
+func TestFindBrowser_CustomAbsolutePath(t *testing.T) {
+	tmpDir := t.TempDir()
+	fakeBrowser := filepath.Join(tmpDir, "fake-browser")
+	if err := os.WriteFile(fakeBrowser, []byte{}, 0755); err != nil {
+		t.Fatalf("Failed to create fake browser file: %v", err)
+	}
+
+	path, err := findBrowser(fakeBrowser)
+	if err != nil {
+		t.Fatalf("findBrowser() error = %v", err)
+	}
+	if path != fakeBrowser {
+		t.Errorf("findBrowser() = %v, want %v", path, fakeBrowser)
+	}
+}
+
+func TestFindBrowser_InvalidCustomPath(t *testing.T) {
+	_, err := findBrowser("/nonexistent/path/to/browser")
+	if err == nil {
+		t.Error("Expected error for nonexistent browser path, got nil")
+	}
+}
+
+func TestFindBrowser_InvalidBareCommand(t *testing.T) {
+	_, err := findBrowser("skool-nonexistent-browser-xyz")
+	if err == nil {
+		t.Error("Expected error for unknown browser command, got nil")
+	}
+}
+
+func TestGetBrowserCandidates_NotEmpty(t *testing.T) {
+	candidates := getBrowserCandidates()
+	if len(candidates) == 0 {
+		t.Error("getBrowserCandidates() returned an empty list")
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) > 0 && len(substr) > 0 && (s == substr || len(s) >= len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || containsInner(s, substr)))
 }

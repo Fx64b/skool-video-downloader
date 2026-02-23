@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -71,6 +72,7 @@ type Config struct {
 	OutputDir   string
 	WaitTime    int
 	Headless    bool
+	BrowserPath string
 }
 
 func main() {
@@ -133,6 +135,7 @@ func parseFlags() Config {
 	flag.StringVar(&config.OutputDir, "output", defaultOutputDir, "Directory to save downloaded videos")
 	flag.IntVar(&config.WaitTime, "wait", defaultWaitTime, "Time to wait for page to load in seconds")
 	flag.BoolVar(&config.Headless, "headless", defaultHeadless, "Run in headless mode (no browser UI)")
+	flag.StringVar(&config.BrowserPath, "browser", "", "Path or command of a Chromium-based browser to use (auto-detected if not specified)")
 
 	flag.Parse()
 	return config
@@ -140,7 +143,22 @@ func parseFlags() Config {
 
 func validateConfig(config Config) {
 	if config.SkoolURL == "" {
-		fmt.Println("Usage: skool-downloader -url=https://skool.com/yourschool/classroom/path [-cookies=cookies.json | -email=user@example.com -password=pass]")
+		fmt.Println("Usage: skool-downloader -url=https://skool.com/yourschool/classroom/path [-cookies=cookies.json | -email=user@example.com -password=pass] [-browser=/path/to/browser]")
+		fmt.Println()
+		fmt.Println("Flags:")
+		fmt.Println("  -url        Skool classroom URL to scrape (required)")
+		fmt.Println("  -email      Email address for Skool login")
+		fmt.Println("  -password   Password for Skool login (required with -email)")
+		fmt.Println("  -cookies    Path to cookies file (JSON or Netscape .txt)")
+		fmt.Println("  -output     Directory to save downloaded videos (default: \"downloads\")")
+		fmt.Println("  -wait       Seconds to wait for page load (default: 2)")
+		fmt.Println("  -headless   Run browser in headless mode (default: true)")
+		fmt.Println("  -browser    Path or command of a Chromium-based browser (auto-detected if not set)")
+		fmt.Println("              Supported: Edge, Chrome, Chromium, Brave")
+		fmt.Println("              Auto-detected in this order:")
+		fmt.Println("                Windows : msedge, chrome, chromium (PATH), then Edge default install")
+		fmt.Println("                macOS   : Chrome, Chromium, Edge, Brave (/Applications/)")
+		fmt.Println("                Linux   : chromium-browser, chromium, google-chrome, microsoft-edge, brave-browser (PATH)")
 		os.Exit(1)
 	}
 
@@ -160,25 +178,106 @@ func scrapeVideos(config Config) ([]string, error) {
 	return scrapeWithCookies(config)
 }
 
-func setupBrowser(headless bool) (context.Context, context.CancelFunc) {
+func getBrowserCandidates() []string {
+	switch runtime.GOOS {
+	case "windows":
+		// Browsers are rarely in PATH on Windows, so fall back to Edge's default
+		// installation path (built-in on Windows 10/11) via the PROGRAMFILES env var.
+		programFiles := os.Getenv("PROGRAMFILES")
+		if programFiles == "" {
+			programFiles = `C:\Program Files`
+		}
+		return []string{
+			"msedge",
+			"chrome",
+			"chromium",
+			filepath.Join(programFiles, "Microsoft", "Edge", "Application", "msedge.exe"),
+		}
+
+	case "darwin":
+		// macOS browsers live in /Applications; they are not typically in PATH.
+		return []string{
+			"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+			"/Applications/Chromium.app/Contents/MacOS/Chromium",
+			"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+			"/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+		}
+
+	default:
+		return []string{
+			"chromium-browser",
+			"chromium",
+			"google-chrome",
+			"google-chrome-stable",
+			"microsoft-edge",
+			"brave-browser",
+		}
+	}
+}
+
+func findBrowser(customPath string) (string, error) {
+	if customPath != "" {
+		if filepath.IsAbs(customPath) {
+			if _, err := os.Stat(customPath); err == nil {
+				return customPath, nil
+			}
+		} else {
+			if path, err := exec.LookPath(customPath); err == nil {
+				return path, nil
+			}
+		}
+		return "", fmt.Errorf("specified browser not found: %s", customPath)
+	}
+
+	for _, candidate := range getBrowserCandidates() {
+		if filepath.IsAbs(candidate) {
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate, nil
+			}
+		} else {
+			if path, err := exec.LookPath(candidate); err == nil {
+				return path, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf(
+		"no supported browser found.\n" +
+			"Supported: Microsoft Edge (built-in on Windows 10/11), Google Chrome, Chromium, Brave.\n" +
+			"Install one of the above, or specify the path with: -browser=/path/to/browser",
+	)
+}
+
+func setupBrowser(headless bool, browserPath string) (context.Context, context.CancelFunc, error) {
+	resolvedPath, err := findBrowser(browserPath)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if strings.Contains(strings.ToLower(filepath.Base(resolvedPath)), "firefox") {
+		return nil, nil, fmt.Errorf("Firefox is not supported. Please use a Chromium-based browser (Chrome, Chromium, Edge, Brave)")
+	}
+
+	fmt.Printf("%s Using browser: %s\n", prefixInfo, resolvedPath)
+
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", headless),
 		chromedp.Flag("disable-gpu", true),
 		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("window-size", "1920,1080"),
 		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"),
+		chromedp.ExecPath(resolvedPath),
 	)
 
 	allocCtx, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	ctx, cancel2 := chromedp.NewContext(allocCtx, chromedp.WithLogf(log.Printf))
 	ctx, cancel3 := context.WithTimeout(ctx, browserTimeout)
 
-	// Return a cancel function that calls all three cancel functions
 	return ctx, func() {
 		cancel3()
 		cancel2()
 		cancel()
-	}
+	}, nil
 }
 
 // extractNextDataJSON extracts the __NEXT_DATA__ JSON object from Skool's HTML
@@ -358,7 +457,10 @@ func extractLoomURLs(html string) []string {
 }
 
 func scrapeWithLogin(config Config) ([]string, error) {
-	ctx, cancel := setupBrowser(config.Headless)
+	ctx, cancel, err := setupBrowser(config.Headless, config.BrowserPath)
+	if err != nil {
+		return nil, err
+	}
 	defer cancel()
 
 	var currentURL string
@@ -378,7 +480,7 @@ func scrapeWithLogin(config Config) ([]string, error) {
 	fmt.Println(prefixInfo, "Landed on:", currentURL)
 
 	// Try to find and click the login button
-	err := chromedp.Run(ctx, chromedp.Tasks{
+	err = chromedp.Run(ctx, chromedp.Tasks{
 		chromedp.WaitVisible(`//button[@type="button"]/span[text()="Log In"]`, chromedp.BySearch),
 		chromedp.Click(`//button[@type="button"]/span[text()="Log In"]`, chromedp.BySearch),
 		chromedp.Sleep(2 * time.Second),
@@ -425,7 +527,10 @@ func scrapeWithLogin(config Config) ([]string, error) {
 }
 
 func scrapeWithCookies(config Config) ([]string, error) {
-	ctx, cancel := setupBrowser(config.Headless)
+	ctx, cancel, err := setupBrowser(config.Headless, config.BrowserPath)
+	if err != nil {
+		return nil, err
+	}
 	defer cancel()
 
 	// Load and set cookies
