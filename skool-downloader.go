@@ -285,25 +285,42 @@ func findFreePort() (int, error) {
 }
 
 func waitForFirefoxCDP(port int, timeout time.Duration) (string, error) {
-	url := fmt.Sprintf("http://127.0.0.1:%d/json/version", port)
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{Timeout: 2 * time.Second}
 
 	for time.Now().Before(deadline) {
-		resp, err := client.Get(url)
-		if err == nil {
-			var info struct {
-				WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
-			}
-			if json.NewDecoder(resp.Body).Decode(&info) == nil && info.WebSocketDebuggerURL != "" {
+		// Poll both addresses: Linux may resolve localhost to ::1 (IPv6) while
+		// Firefox binds to 127.0.0.1 (IPv4), or vice versa.
+		for _, host := range []string{"127.0.0.1", "localhost"} {
+			resp, err := client.Get(fmt.Sprintf("http://%s:%d/json/version", host, port))
+			if err == nil {
+				var info struct {
+					WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
+				}
+				if json.NewDecoder(resp.Body).Decode(&info) == nil && info.WebSocketDebuggerURL != "" {
+					resp.Body.Close()
+					return info.WebSocketDebuggerURL, nil
+				}
 				resp.Body.Close()
-				return info.WebSocketDebuggerURL, nil
 			}
-			resp.Body.Close()
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
 	return "", fmt.Errorf("timed out waiting for Firefox CDP on port %d", port)
+}
+
+func writeFirefoxPrefs(profileDir string) error {
+	// These preferences are required for CDP remote debugging to work.
+	// An empty profile would otherwise block on the first-run wizard and
+	// show a "allow remote debugging?" prompt that prevents CDP from starting.
+	prefs := `user_pref("devtools.debugger.remote-enabled", true);
+user_pref("devtools.debugger.prompt-connection", false);
+user_pref("devtools.chrome.enabled", true);
+user_pref("browser.aboutwelcome.enabled", false);
+user_pref("datareporting.policy.dataSubmissionEnabled", false);
+user_pref("toolkit.telemetry.reportingpolicy.firstRun", false);
+`
+	return os.WriteFile(filepath.Join(profileDir, "prefs.js"), []byte(prefs), 0644)
 }
 
 // Firefox requires a different launch strategy: chromedp's ExecAllocator expects
@@ -317,6 +334,11 @@ func setupFirefoxBrowser(headless bool, firefoxPath string) (context.Context, co
 	profileDir, err := os.MkdirTemp("", "skool-firefox-*")
 	if err != nil {
 		return nil, nil, fmt.Errorf("could not create temp profile: %w", err)
+	}
+
+	if err := writeFirefoxPrefs(profileDir); err != nil {
+		os.RemoveAll(profileDir)
+		return nil, nil, fmt.Errorf("could not write Firefox prefs: %w", err)
 	}
 
 	args := []string{
