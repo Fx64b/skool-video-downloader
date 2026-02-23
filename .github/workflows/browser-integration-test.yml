@@ -76,6 +76,7 @@ jobs:
           Write-Output $output
           if ($output -match "Attempting login") {
             Write-Output "SUCCESS: Browser opened and reached skool.com"
+            exit 0
           } else {
             Write-Error "FAIL: Did not reach login attempt — browser may not have opened"
             exit 1
