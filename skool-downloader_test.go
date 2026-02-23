@@ -505,41 +505,6 @@ func TestGetBrowserCandidates_NotEmpty(t *testing.T) {
 	}
 }
 
-func TestIsFirefox(t *testing.T) {
-	tests := []struct {
-		path     string
-		expected bool
-	}{
-		{"/usr/bin/firefox", true},
-		{"/usr/bin/firefox-esr", true},
-		{`C:\Program Files\Mozilla Firefox\firefox.exe`, true},
-		{"/Applications/Firefox.app/Contents/MacOS/firefox", true},
-		{"/usr/bin/chromium", false},
-		{"/usr/bin/google-chrome", false},
-		{`C:\Program Files\Microsoft\Edge\Application\msedge.exe`, false},
-		{"brave-browser", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.path, func(t *testing.T) {
-			result := isFirefox(tt.path)
-			if result != tt.expected {
-				t.Errorf("isFirefox(%q) = %v, want %v", tt.path, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestFindFreePort(t *testing.T) {
-	port, err := findFreePort()
-	if err != nil {
-		t.Fatalf("findFreePort() error = %v", err)
-	}
-	if port <= 0 || port > 65535 {
-		t.Errorf("findFreePort() = %d, want a valid port number", port)
-	}
-}
-
 // Helper function
 func contains(s, substr string) bool {
 	return len(s) > 0 && len(substr) > 0 && (s == substr || len(s) >= len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || containsInner(s, substr)))

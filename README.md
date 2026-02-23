@@ -25,7 +25,7 @@ Use this tool only to download content you have the right to access. Please resp
 - Automatically detects and normalizes video URLs
 - Configurable page loading wait time
 - Toggleable headless mode for debugging
-- Auto-detects any installed browser — supports Chromium-based browsers and Firefox
+- Auto-detects any installed Chromium-based browser
 
 ## Installation
 
@@ -85,34 +85,34 @@ go build
 -output     Directory to save videos (default: "downloads")
 -wait       Page load wait time in seconds (default: 2)
 -headless   Run browser headless (default: true, set false for debugging)
--browser    Path or command of the browser to use (auto-detected if not set)
+-browser    Path or command of a Chromium-based browser (auto-detected if not set)
 ```
 
 ### Browser Support
 
-The tool does **not** require Google Chrome. On startup it searches for a supported browser automatically, preferring Chromium-based browsers (better CDP support) with Firefox as a fallback:
+The tool does **not** require Google Chrome. On startup it searches for a supported Chromium-based browser automatically:
 
 | Platform | Detection order |
 |----------|----------------|
-| **Windows** | Edge (built-in) → Chrome → Chromium → Brave → Firefox |
-| **macOS** | Chrome → Chromium → Edge → Brave → Arc → Firefox |
-| **Linux** | `chromium-browser` → `chromium` → `google-chrome` → `microsoft-edge` → `brave-browser` → `firefox` → `firefox-esr` |
+| **Windows** | `msedge`, `chrome`, `chromium` (PATH) → Edge default install |
+| **macOS** | Chrome → Chromium → Edge → Brave (`/Applications/`) |
+| **Linux** | `chromium-browser` → `chromium` → `google-chrome` → `microsoft-edge` → `brave-browser` (PATH) |
 
 The first browser found is used. To pick a specific browser, or if auto-detection fails, use `-browser`:
 
 ```bash
 # Absolute path
-./skool-downloader -url="..." -email="..." -password="..." -browser="/usr/bin/firefox"
+./skool-downloader -url="..." -email="..." -password="..." -browser="/usr/bin/chromium"
 
 # Command available in PATH (Linux/macOS)
 ./skool-downloader -url="..." -email="..." -password="..." -browser="brave-browser"
 
 # Windows example
-skool-downloader.exe -url="..." -email="..." -password="..." -browser="C:\Program Files\Mozilla Firefox\firefox.exe"
+skool-downloader.exe -url="..." -email="..." -password="..." -browser="C:\Program Files\Google\Chrome\Application\chrome.exe"
 ```
 
 > [!NOTE]
-> Safari is not supported. Firefox support requires Firefox **86–129**; Firefox 130+ switched to WebDriver BiDi which is not compatible with this tool. Cookie-based auth with Firefox may have limited compatibility.
+> Only Chromium-based browsers are supported (Chrome, Chromium, Edge, Brave). Safari and Firefox are not supported.
 
 ### Authentication Methods
 
@@ -145,7 +145,7 @@ If you choose to use cookies instead of email/password:
 - **Download errors**: Update yt-dlp (`pip install -U yt-dlp`)
 - **Login issues**: Try `-headless=false` to see the browser and debug
 - **Specific video errors**: Check if the video is still available on Loom
-- **No browser found**: Install Edge, Chrome, Chromium, Brave, or Firefox — or point to an existing one with `-browser=/path/to/browser`
+- **No browser found**: Install Edge, Chrome, Chromium, or Brave — or point to an existing one with `-browser=/path/to/browser`
 - **Wrong browser launched**: Override auto-detection with `-browser=` to pick the exact executable you want
 
 ## Development and Testing
