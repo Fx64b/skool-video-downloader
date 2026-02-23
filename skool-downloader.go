@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"flag"
@@ -284,14 +285,23 @@ func findFreePort() (int, error) {
 	return l.Addr().(*net.TCPAddr).Port, nil
 }
 
-func waitForFirefoxCDP(port int, timeout time.Duration) (string, error) {
+func waitForFirefoxCDP(port int, wsFromStderr <-chan string, timeout time.Duration) (string, error) {
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{Timeout: 2 * time.Second}
+	// Cover IPv4, IPv6, and any OS-specific localhost resolution difference.
+	hosts := []string{"127.0.0.1", "localhost", "[::1]"}
 
 	for time.Now().Before(deadline) {
-		// Poll both addresses: Linux may resolve localhost to ::1 (IPv6) while
-		// Firefox binds to 127.0.0.1 (IPv4), or vice versa.
-		for _, host := range []string{"127.0.0.1", "localhost"} {
+		// Prefer a URL that Firefox printed to stderr directly.
+		select {
+		case wsURL, ok := <-wsFromStderr:
+			if ok && wsURL != "" {
+				return wsURL, nil
+			}
+		default:
+		}
+
+		for _, host := range hosts {
 			resp, err := client.Get(fmt.Sprintf("http://%s:%d/json/version", host, port))
 			if err == nil {
 				var info struct {
@@ -341,22 +351,49 @@ func setupFirefoxBrowser(headless bool, firefoxPath string) (context.Context, co
 		return nil, nil, fmt.Errorf("could not write Firefox prefs: %w", err)
 	}
 
+	// Firefox uses single-dash for its own flags; --remote-debugging-port follows Chrome convention.
 	args := []string{
 		fmt.Sprintf("--remote-debugging-port=%d", port),
-		"--no-remote",
-		"--profile", profileDir,
+		"-no-remote",
+		"-profile", profileDir,
 	}
 	if headless {
-		args = append(args, "--headless")
+		args = append(args, "-headless")
 	}
 
 	cmd := exec.Command(firefoxPath, args...)
+
+	// Pipe Firefox stderr so we can see startup messages and detect the CDP URL.
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		os.RemoveAll(profileDir)
+		return nil, nil, fmt.Errorf("could not pipe Firefox stderr: %w", err)
+	}
+
 	if err := cmd.Start(); err != nil {
 		os.RemoveAll(profileDir)
 		return nil, nil, fmt.Errorf("could not start Firefox: %w", err)
 	}
 
-	wsURL, err := waitForFirefoxCDP(port, 30*time.Second)
+	// Scan stderr: print each line for visibility and detect any ws:// URL Firefox may emit.
+	wsFromStderr := make(chan string, 1)
+	go func() {
+		defer close(wsFromStderr)
+		scanner := bufio.NewScanner(stderrPipe)
+		for scanner.Scan() {
+			line := scanner.Text()
+			fmt.Fprintln(os.Stderr, "[firefox]", line)
+			if i := strings.Index(line, "ws://"); i >= 0 {
+				url := strings.Fields(line[i:])[0]
+				select {
+				case wsFromStderr <- url:
+				default:
+				}
+			}
+		}
+	}()
+
+	wsURL, err := waitForFirefoxCDP(port, wsFromStderr, 30*time.Second)
 	if err != nil {
 		cmd.Process.Kill()
 		os.RemoveAll(profileDir)
